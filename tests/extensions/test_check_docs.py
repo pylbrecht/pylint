@@ -13,6 +13,8 @@
 # Copyright (c) 2019 Hugo van Kemenade <hugovk@users.noreply.github.com>
 # Copyright (c) 2020 Luigi <luigi.cristofolini@q-ctrl.com>
 # Copyright (c) 2021 Daniël van Noord <13665637+DanielNoord@users.noreply.github.com>
+# Copyright (c) 2021 Konstantina Saketou <56515303+ksaketou@users.noreply.github.com>
+# Copyright (c) 2021 Ville Skyttä <ville.skytta@iki.fi>
 # Copyright (c) 2021 Marc Mueller <30130371+cdce8p@users.noreply.github.com>
 # Copyright (c) 2021 Logan Miller <14319179+komodo472@users.noreply.github.com>
 
@@ -1338,13 +1340,17 @@ class TestParamDocChecker(CheckerTestCase):
     def test_finds_args_without_type_numpy(self) -> None:
         node = astroid.extract_node(
             '''
-        def my_func(named_arg, *args):
+        def my_func(named_arg, typed_arg: bool, untyped_arg, *args):
             """The docstring
 
             Args
             ----
             named_arg : object
                 Returned
+            typed_arg
+                Other argument without numpy type annotation
+            untyped_arg
+                Other argument without any type annotation
             *args :
                 Optional Arguments
 
@@ -1357,7 +1363,9 @@ class TestParamDocChecker(CheckerTestCase):
                 return named_arg
         '''
         )
-        with self.assertNoMessages():
+        with self.assertAddsMessages(
+            MessageTest(msg_id="missing-type-doc", node=node, args=("untyped_arg",))
+        ):
             self.checker.visit_functiondef(node)
 
     def test_finds_args_with_xref_type_google(self) -> None:
@@ -1880,6 +1888,7 @@ class TestParamDocChecker(CheckerTestCase):
         with self.assertNoMessages():
             self.checker.visit_return(node)
 
+    @set_config(accept_no_return_doc="no")
     def test_finds_missing_property_return_type_sphinx(self) -> None:
         """Example of a property having missing return documentation in
         a Sphinx style docstring
@@ -1923,6 +1932,7 @@ class TestParamDocChecker(CheckerTestCase):
         with self.assertNoMessages():
             self.checker.visit_return(node)
 
+    @set_config(accept_no_return_doc="no")
     def test_finds_missing_property_return_type_google(self) -> None:
         """Example of a property having return documentation in
         a Google style docstring
@@ -1946,6 +1956,7 @@ class TestParamDocChecker(CheckerTestCase):
         ):
             self.checker.visit_return(node)
 
+    @set_config(accept_no_return_doc="no")
     def test_finds_missing_property_return_type_numpy(self) -> None:
         """Example of a property having return documentation in
         a numpy style docstring
@@ -1971,6 +1982,7 @@ class TestParamDocChecker(CheckerTestCase):
         ):
             self.checker.visit_return(node)
 
+    @set_config(accept_no_return_doc="no")
     def test_ignores_non_property_return_type_sphinx(self) -> None:
         """Example of a class function trying to use `type` as return
         documentation in a Sphinx style docstring
@@ -1992,6 +2004,7 @@ class TestParamDocChecker(CheckerTestCase):
         ):
             self.checker.visit_return(node)
 
+    @set_config(accept_no_return_doc="no")
     def test_ignores_non_property_return_type_google(self) -> None:
         """Example of a class function trying to use `type` as return
         documentation in a Google style docstring
@@ -2015,6 +2028,7 @@ class TestParamDocChecker(CheckerTestCase):
         ):
             self.checker.visit_return(node)
 
+    @set_config(accept_no_return_doc="no")
     def test_ignores_non_property_return_type_numpy(self) -> None:
         """Example of a class function trying to use `type` as return
         documentation in a numpy style docstring
@@ -2040,6 +2054,7 @@ class TestParamDocChecker(CheckerTestCase):
         ):
             self.checker.visit_return(node)
 
+    @set_config(accept_no_return_doc="no")
     def test_non_property_annotation_return_type_numpy(self) -> None:
         """Example of a class function trying to use `type` as return
         documentation in a numpy style docstring

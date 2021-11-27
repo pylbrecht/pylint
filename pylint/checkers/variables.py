@@ -17,8 +17,8 @@
 # Copyright (c) 2016-2017 Derek Gustafson <degustaf@gmail.com>
 # Copyright (c) 2016-2017 Łukasz Rogalski <rogalski.91@gmail.com>
 # Copyright (c) 2016 Grant Welch <gwelch925+github@gmail.com>
+# Copyright (c) 2017-2018, 2021 Ville Skyttä <ville.skytta@iki.fi>
 # Copyright (c) 2017-2018, 2020 hippo91 <guillaume.peillex@gmail.com>
-# Copyright (c) 2017-2018 Ville Skyttä <ville.skytta@iki.fi>
 # Copyright (c) 2017 Dan Garrette <dhgarrette@gmail.com>
 # Copyright (c) 2018-2019 Jim Robertson <jrobertson98atx@gmail.com>
 # Copyright (c) 2018 Mike Miller <mtmiller@users.noreply.github.com>
@@ -32,7 +32,7 @@
 # Copyright (c) 2018 Marianna Polatoglou <mpolatoglou@bloomberg.net>
 # Copyright (c) 2018 mar-chi-pan <mar.polatoglou@gmail.com>
 # Copyright (c) 2019-2021 Pierre Sassoulas <pierre.sassoulas@gmail.com>
-# Copyright (c) 2019 Nick Drozd <nicholasdrozd@gmail.com>
+# Copyright (c) 2019, 2021 Nick Drozd <nicholasdrozd@gmail.com>
 # Copyright (c) 2019 Djailla <bastien.vallet@gmail.com>
 # Copyright (c) 2019 Hugo van Kemenade <hugovk@users.noreply.github.com>
 # Copyright (c) 2020 Andrew Simmons <anjsimmo@gmail.com>
@@ -40,7 +40,9 @@
 # Copyright (c) 2020 Anthony Sottile <asottile@umich.edu>
 # Copyright (c) 2020 Ashley Whetter <ashleyw@activestate.com>
 # Copyright (c) 2021 Daniël van Noord <13665637+DanielNoord@users.noreply.github.com>
+# Copyright (c) 2021 Tushar Sadhwani <tushar.sadhwani000@gmail.com>
 # Copyright (c) 2021 Marc Mueller <30130371+cdce8p@users.noreply.github.com>
+# Copyright (c) 2021 bot <bot@noreply.github.com>
 # Copyright (c) 2021 David Liu <david@cs.toronto.edu>
 # Copyright (c) 2021 kasium <15907922+kasium@users.noreply.github.com>
 # Copyright (c) 2021 Marcin Kurczewski <rr-@sakuya.pl>
@@ -61,7 +63,7 @@ import os
 import re
 import sys
 from functools import lru_cache
-from typing import DefaultDict, List, Tuple
+from typing import DefaultDict, List, Optional, Set, Tuple, Union
 
 import astroid
 from astroid import nodes
@@ -358,12 +360,13 @@ def _assigned_locally(name_node):
     return any(a.name == name_node.name for a in assign_stmts)
 
 
-def _is_type_checking_import(node):
-    parent = node.parent
-    if not isinstance(parent, nodes.If):
-        return False
-    test = parent.test
-    return test.as_string() in TYPING_TYPE_CHECKS_GUARDS
+def _is_type_checking_import(node: Union[nodes.Import, nodes.ImportFrom]) -> bool:
+    """Check if an import node is guarded by a TYPE_CHECKS guard"""
+    for ancestor in node.node_ancestors():
+        if isinstance(ancestor, nodes.If):
+            if ancestor.test.as_string() in TYPING_TYPE_CHECKS_GUARDS:
+                return True
+    return False
 
 
 def _has_locals_call_after_node(stmt, scope):
@@ -629,7 +632,7 @@ class VariablesChecker(BaseChecker):
             {
                 "default": 0,
                 "type": "yn",
-                "metavar": "<y_or_n>",
+                "metavar": "<y or n>",
                 "help": "Tells whether we should check for unused import in "
                 "__init__ files.",
             },
@@ -697,7 +700,7 @@ class VariablesChecker(BaseChecker):
             {
                 "default": True,
                 "type": "yn",
-                "metavar": "<y_or_n>",
+                "metavar": "<y or n>",
                 "help": "Tells whether unused global variables should be treated as a violation.",
             },
         ),
@@ -1211,6 +1214,12 @@ class VariablesChecker(BaseChecker):
                         )
                     if is_first_level_ref:
                         break
+                elif isinstance(defnode, nodes.NamedExpr):
+                    if isinstance(defnode.parent, nodes.IfExp):
+                        if self._is_never_evaluated(defnode, defnode.parent):
+                            self.add_message(
+                                "undefined-variable", node=node, args=node.name
+                            )
 
             current_consumer.mark_as_consumed(node.name, found_nodes)
             # check it's not a loop variable used outside the loop
@@ -1635,6 +1644,21 @@ class VariablesChecker(BaseChecker):
                 return 2
         return 0
 
+    @staticmethod
+    def _is_never_evaluated(
+        defnode: nodes.NamedExpr, defnode_parent: nodes.IfExp
+    ) -> bool:
+        """Check if a NamedExpr is inside a side of if ... else that never
+        gets evaluated
+        """
+        inferred_test = utils.safe_infer(defnode_parent.test)
+        if isinstance(inferred_test, nodes.Const):
+            if inferred_test.value is True and defnode == defnode_parent.orelse:
+                return True
+            if inferred_test.value is False and defnode == defnode_parent.body:
+                return True
+        return False
+
     def _ignore_class_scope(self, node):
         """
         Return True if the node is in a local class scope, as an assignment.
@@ -1762,7 +1786,6 @@ class VariablesChecker(BaseChecker):
                 self.add_message("undefined-loop-variable", args=node.name, node=node)
 
     def _check_is_unused(self, name, node, stmt, global_names, nonlocal_names):
-        # pylint: disable=too-many-branches
         # Ignore some special names specified by user configuration.
         if self._is_name_ignored(stmt, name):
             return
@@ -2001,18 +2024,19 @@ class VariablesChecker(BaseChecker):
             return
         self._store_type_annotation_node(node.type_annotation)
 
-    def _check_self_cls_assign(self, node):
+    def _check_self_cls_assign(self, node: nodes.Assign) -> None:
         """Check that self/cls don't get assigned"""
-        assign_names = {
-            target.name
-            for target in node.targets
-            if isinstance(target, nodes.AssignName)
-        }
+        assign_names: Set[Optional[str]] = set()
+        for target in node.targets:
+            if isinstance(target, nodes.AssignName):
+                assign_names.add(target.name)
+            elif isinstance(target, nodes.Tuple):
+                assign_names.update(
+                    elt.name for elt in target.elts if isinstance(elt, nodes.AssignName)
+                )
         scope = node.scope()
         nonlocals_with_same_name = any(
-            child
-            for child in scope.body
-            if isinstance(child, nodes.Nonlocal) and assign_names & set(child.names)
+            child for child in scope.body if isinstance(child, nodes.Nonlocal)
         )
         if nonlocals_with_same_name:
             scope = node.scope().parent.scope()
@@ -2027,12 +2051,7 @@ class VariablesChecker(BaseChecker):
         if not argument_names:
             return
         self_cls_name = argument_names[0]
-        target_assign_names = (
-            target.name
-            for target in node.targets
-            if isinstance(target, nodes.AssignName)
-        )
-        if self_cls_name in target_assign_names:
+        if self_cls_name in assign_names:
             self.add_message("self-cls-assignment", node=node, args=(self_cls_name,))
 
     def _check_unpacking(self, inferred, node, targets):
@@ -2113,7 +2132,7 @@ class VariablesChecker(BaseChecker):
         assigned = next(node.igetattr("__all__"))
         if assigned is astroid.Uninferable:
             return
-        if not assigned.pytype() in ["builtins.list", "builtins.tuple"]:
+        if not assigned.pytype() in {"builtins.list", "builtins.tuple"}:
             line, col = assigned.tolineno, assigned.col_offset
             self.add_message("invalid-all-format", line=line, col_offset=col, node=node)
             return

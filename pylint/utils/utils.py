@@ -59,7 +59,7 @@ GLOBAL_OPTION_PATTERN = Literal[
     "ignored-argument-names",
     "mixin-class-rgx",
 ]
-GLOBAL_OPTION_PATTERN_LIST = Literal["ignore-paths"]
+GLOBAL_OPTION_PATTERN_LIST = Literal["exclude-too-few-public-methods", "ignore-paths"]
 GLOBAL_OPTION_TUPLE_INT = Literal["py-version"]
 GLOBAL_OPTION_NAMES = Union[
     GLOBAL_OPTION_BOOL,
@@ -93,7 +93,7 @@ CMPS = ["=", "-", "+"]
 
 
 # py3k has no more cmp builtin
-def cmp(a, b):  # pylint: disable=redefined-builtin
+def cmp(a, b):
     return (a > b) - (a < b)
 
 

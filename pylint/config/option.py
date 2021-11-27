@@ -50,9 +50,11 @@ def _choice_validator(choices, name, value):
 def _yn_validator(opt, _, value):
     if isinstance(value, int):
         return bool(value)
-    if value in ("y", "yes", "true"):
+    if isinstance(value, str):
+        value = value.lower()
+    if value in {"y", "yes", "true"}:
         return True
-    if value in ("n", "no", "false"):
+    if value in {"n", "no", "false"}:
         return False
     msg = "option %s: invalid yn value %r, should be in (y, yes, true, n, no, false)"
     raise optparse.OptionValueError(msg % (opt, value))
@@ -162,7 +164,7 @@ class Option(optparse.Option):
             self.help = optparse.SUPPRESS_HELP
 
     def _check_choice(self):
-        if self.type in ("choice", "multiple_choice"):
+        if self.type in {"choice", "multiple_choice"}:
             if self.choices is None:
                 raise optparse.OptionError(
                     "must supply a list of choices for type 'choice'", self
@@ -179,8 +181,7 @@ class Option(optparse.Option):
                 f"must not supply choices for type {self.type!r}", self
             )
 
-    # pylint: disable=unsupported-assignment-operation
-    optparse.Option.CHECK_METHODS[2] = _check_choice  # type: ignore
+    optparse.Option.CHECK_METHODS[2] = _check_choice  # type: ignore[index]
 
     def process(self, opt, value, values, parser):
         # First, convert the value(s) to the right type.  Howl if any

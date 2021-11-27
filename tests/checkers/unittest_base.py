@@ -34,156 +34,9 @@ from typing import Dict, Type
 
 import astroid
 
-from pylint.checkers import BaseChecker, base
+from pylint.checkers import base
+from pylint.interfaces import HIGH, INFERENCE
 from pylint.testutils import CheckerTestCase, MessageTest, set_config
-
-
-class TestDocstring(CheckerTestCase):
-    CHECKER_CLASS: Type = base.DocStringChecker
-
-    def test_missing_docstring_module(self) -> None:
-        module = astroid.parse("something")
-        message = MessageTest("missing-module-docstring", node=module)
-        with self.assertAddsMessages(message):
-            self.checker.visit_module(module)
-
-    def test_missing_docstring_empty_module(self) -> None:
-        module = astroid.parse("")
-        with self.assertNoMessages():
-            self.checker.visit_module(module)
-
-    def test_empty_docstring_module(self) -> None:
-        module = astroid.parse("''''''")
-        message = MessageTest("empty-docstring", node=module, args=("module",))
-        with self.assertAddsMessages(message):
-            self.checker.visit_module(module)
-
-    @set_config(no_docstring_rgx=re.compile("^(?!__init__$)_"))
-    def test_empty_docstring_on_init(self) -> None:
-        node = astroid.extract_node(
-            """
-        #pylint disable=missing-module-docstring, too-few-public-methods,
-        class MyClass:
-            def __init__(self, my_param: int) -> None:
-                '''
-                '''
-        """
-        )
-        message = MessageTest("empty-docstring", node=node.body[0], args=("method",))
-        with self.assertAddsMessages(message):
-            self.checker.visit_functiondef(node.body[0])
-
-    def test_empty_docstring_function(self) -> None:
-        func = astroid.extract_node(
-            """
-        def func(tion):
-           pass"""
-        )
-        message = MessageTest("missing-function-docstring", node=func)
-        with self.assertAddsMessages(message):
-            self.checker.visit_functiondef(func)
-
-    @set_config(docstring_min_length=2)
-    def test_short_function_no_docstring(self) -> None:
-        func = astroid.extract_node(
-            """
-        def func(tion):
-           pass"""
-        )
-        with self.assertNoMessages():
-            self.checker.visit_functiondef(func)
-
-    @set_config(docstring_min_length=2)
-    def test_long_function_no_docstring(self) -> None:
-        func = astroid.extract_node(
-            """
-        def func(tion):
-            pass
-            pass
-           """
-        )
-        message = MessageTest("missing-function-docstring", node=func)
-        with self.assertAddsMessages(message):
-            self.checker.visit_functiondef(func)
-
-    @set_config(docstring_min_length=2)
-    def test_long_function_nested_statements_no_docstring(self) -> None:
-        func = astroid.extract_node(
-            """
-        def func(tion):
-            try:
-                pass
-            except:
-                pass
-           """
-        )
-        message = MessageTest("missing-function-docstring", node=func)
-        with self.assertAddsMessages(message):
-            self.checker.visit_functiondef(func)
-
-    @set_config(docstring_min_length=2)
-    def test_function_no_docstring_by_name(self) -> None:
-        func = astroid.extract_node(
-            """
-        def __fun__(tion):
-           pass"""
-        )
-        with self.assertNoMessages():
-            self.checker.visit_functiondef(func)
-
-    @set_config(no_docstring_rgx=re.compile("^(?!__init__$)_"))
-    def test_missing_docstring_on_init(self) -> None:
-        node = astroid.extract_node(
-            """
-        #pylint disable=missing-module-docstring, too-few-public-methods,
-        class MyClass:
-            def __init__(self, my_param: int) -> None:
-                pass
-        """
-        )
-        message = MessageTest("missing-function-docstring", node=node.body[0])
-        with self.assertAddsMessages(message):
-            self.checker.visit_functiondef(node.body[0])
-
-    @set_config(no_docstring_rgx=re.compile("^(?!__eq__$)_"))
-    def test_missing_docstring_on_inherited_magic(self) -> None:
-        module = astroid.parse(
-            """
-        #pylint disable=missing-module-docstring, too-few-public-methods,
-        class MyClass:
-            pass
-
-        class Child(MyClass):
-            def __eq__(self, other):
-                return True
-        """
-        )
-        message = MessageTest("missing-function-docstring", node=module.body[1].body[0])
-        with self.assertAddsMessages(message):
-            self.checker.visit_functiondef(module.body[1].body[0])
-
-    def test_class_no_docstring(self) -> None:
-        klass = astroid.extract_node(
-            """
-        class Klass(object):
-           pass"""
-        )
-        message = MessageTest("missing-class-docstring", node=klass)
-        with self.assertAddsMessages(message):
-            self.checker.visit_classdef(klass)
-
-    def test_inner_function_no_docstring(self) -> None:
-        func = astroid.extract_node(
-            """
-        def func(tion):
-            \"""Documented\"""
-            def inner(fun):
-                # Not documented
-                pass
-        """
-        )
-        with self.assertNoMessages():
-            self.checker.visit_functiondef(func)
 
 
 class TestNameChecker(CheckerTestCase):
@@ -232,6 +85,7 @@ class TestNameChecker(CheckerTestCase):
                 "invalid-name",
                 node=methods[1],
                 args=("Attribute", "bar", "'[A-Z]+' pattern"),
+                confidence=INFERENCE,
             )
         ):
             self.checker.visit_functiondef(methods[1])
@@ -310,6 +164,8 @@ class TestNameChecker(CheckerTestCase):
                 msg_id="assign-to-new-keyword",
                 node=ast[0].targets[0],
                 args=("async", "3.7"),
+                confidence=HIGH,
+                col_offset=None,
             )
         ):
             self.checker.visit_assignname(ast[0].targets[0])
@@ -318,18 +174,28 @@ class TestNameChecker(CheckerTestCase):
                 msg_id="assign-to-new-keyword",
                 node=ast[1].targets[0],
                 args=("await", "3.7"),
+                confidence=HIGH,
+                col_offset=None,
             )
         ):
             self.checker.visit_assignname(ast[1].targets[0])
         with self.assertAddsMessages(
             MessageTest(
-                msg_id="assign-to-new-keyword", node=ast[2], args=("async", "3.7")
+                msg_id="assign-to-new-keyword",
+                node=ast[2],
+                args=("async", "3.7"),
+                confidence=HIGH,
+                col_offset=None,
             )
         ):
             self.checker.visit_functiondef(ast[2])
         with self.assertAddsMessages(
             MessageTest(
-                msg_id="assign-to-new-keyword", node=ast[3], args=("async", "3.7")
+                msg_id="assign-to-new-keyword",
+                node=ast[3],
+                args=("async", "3.7"),
+                confidence=HIGH,
+                col_offset=None,
             )
         ):
             self.checker.visit_classdef(ast[3])
@@ -360,6 +226,7 @@ class TestMultiNamingStyle(CheckerTestCase):
                 "classb",
                 "the `UP` group in the '(?:(?P<UP>[A-Z]+)|(?P<down>[a-z]+))$' pattern",
             ),
+            confidence=HIGH,
         )
         with self.assertAddsMessages(message):
             cls = None
@@ -389,6 +256,7 @@ class TestMultiNamingStyle(CheckerTestCase):
                     "class_a",
                     "'(?:(?P<UP>[A-Z]+)|(?P<down>[a-z]+))$' pattern",
                 ),
+                confidence=HIGH,
             ),
             MessageTest(
                 "invalid-name",
@@ -398,6 +266,7 @@ class TestMultiNamingStyle(CheckerTestCase):
                     "CLASSC",
                     "the `down` group in the '(?:(?P<UP>[A-Z]+)|(?P<down>[a-z]+))$' pattern",
                 ),
+                confidence=HIGH,
             ),
         ]
         with self.assertAddsMessages(*messages):
@@ -432,6 +301,7 @@ class TestMultiNamingStyle(CheckerTestCase):
                 "FUNC",
                 "the `down` group in the '(?:(?P<UP>[A-Z]+)|(?P<down>[a-z]+))$' pattern",
             ),
+            confidence=HIGH,
         )
         with self.assertAddsMessages(message):
             func = None
@@ -464,6 +334,7 @@ class TestMultiNamingStyle(CheckerTestCase):
                 "UPPER",
                 "the `down` group in the '(?:(?P<ignore>FOO)|(?P<UP>[A-Z]+)|(?P<down>[a-z]+))$' pattern",
             ),
+            confidence=HIGH,
         )
         with self.assertAddsMessages(message):
             func = None
@@ -548,9 +419,6 @@ class TestComparison(CheckerTestCase):
         node = astroid.extract_node("True == foo")
         messages = (
             MessageTest(
-                "misplaced-comparison-constant", node=node, args=("foo == True",)
-            ),
-            MessageTest(
                 "singleton-comparison",
                 node=node,
                 args=(
@@ -565,9 +433,6 @@ class TestComparison(CheckerTestCase):
         node = astroid.extract_node("False == foo")
         messages = (
             MessageTest(
-                "misplaced-comparison-constant", node=node, args=("foo == False",)
-            ),
-            MessageTest(
                 "singleton-comparison",
                 node=node,
                 args=(
@@ -581,9 +446,6 @@ class TestComparison(CheckerTestCase):
 
         node = astroid.extract_node("None == foo")
         messages = (
-            MessageTest(
-                "misplaced-comparison-constant", node=node, args=("foo == None",)
-            ),
             MessageTest(
                 "singleton-comparison",
                 node=node,
@@ -681,66 +543,6 @@ class TestNamePresets(unittest.TestCase):
             self._test_name_is_incorrect_for_all_name_types(naming_style, name)
 
         self._test_should_always_pass(naming_style)
-
-
-class TestBaseChecker(unittest.TestCase):
-    def test_doc(self) -> None:
-        class OtherBasicChecker(BaseChecker):
-            name = "basic"
-            msgs = {
-                "W0001": (
-                    "Basic checker has an example.",
-                    "basic-checker-example",
-                    "Used nowhere and serves no purpose.",
-                )
-            }
-
-        class LessBasicChecker(OtherBasicChecker):
-            options = (
-                (
-                    "example-args",
-                    {
-                        "default": 42,
-                        "type": "int",
-                        "metavar": "<int>",
-                        "help": "Example of integer argument for the checker.",
-                    },
-                ),
-            )
-
-        basic = OtherBasicChecker()
-        expected_beginning = """\
-Basic checker
-~~~~~~~~~~~~~
-
-Verbatim name of the checker is ``basic``.
-
-"""
-        expected_middle = """\
-Basic checker Options
-^^^^^^^^^^^^^^^^^^^^^
-:example-args:
-  Example of integer argument for the checker.
-
-  Default: ``42``
-
-"""
-        expected_end = """\
-Basic checker Messages
-^^^^^^^^^^^^^^^^^^^^^^
-:basic-checker-example (W0001): *Basic checker has an example.*
-  Used nowhere and serves no purpose.
-
-
-"""
-        self.assertEqual(str(basic), expected_beginning + expected_end)
-        self.assertEqual(repr(basic), "Checker 'basic' (responsible for 'W0001')")
-        less_basic = LessBasicChecker()
-
-        self.assertEqual(
-            str(less_basic), expected_beginning + expected_middle + expected_end
-        )
-        self.assertEqual(repr(less_basic), repr(basic))
 
 
 class TestNoSix(unittest.TestCase):

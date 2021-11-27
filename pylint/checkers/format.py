@@ -37,6 +37,9 @@
 # Copyright (c) 2019 Hugo van Kemenade <hugovk@users.noreply.github.com>
 # Copyright (c) 2020 Raphael Gaschignard <raphael@rtpg.co>
 # Copyright (c) 2021 Daniël van Noord <13665637+DanielNoord@users.noreply.github.com>
+# Copyright (c) 2021 Tushar Sadhwani <tushar.sadhwani000@gmail.com>
+# Copyright (c) 2021 bot <bot@noreply.github.com>
+# Copyright (c) 2021 Ville Skyttä <ville.skytta@iki.fi>
 # Copyright (c) 2021 Marc Mueller <30130371+cdce8p@users.noreply.github.com>
 
 # Licensed under the GPL: https://www.gnu.org/licenses/old-licenses/gpl-2.0.html
@@ -52,7 +55,7 @@ Some parts of the process_token method is based from The Tab Nanny std module.
 """
 
 import tokenize
-from functools import reduce  # pylint: disable=redefined-builtin
+from functools import reduce
 from typing import List
 
 from astroid import nodes
@@ -270,7 +273,7 @@ class FormatChecker(BaseTokenChecker):
             {
                 "default": False,
                 "type": "yn",
-                "metavar": "<y_or_n>",
+                "metavar": "<y or n>",
                 "help": (
                     "Allow the body of an if to be on the same "
                     "line as the test if there is no else."
@@ -282,7 +285,7 @@ class FormatChecker(BaseTokenChecker):
             {
                 "default": False,
                 "type": "yn",
-                "metavar": "<y_or_n>",
+                "metavar": "<y or n>",
                 "help": (
                     "Allow the body of a class to be on the same "
                     "line as the declaration if body contains "
@@ -408,9 +411,9 @@ class FormatChecker(BaseTokenChecker):
                     contains_double_parens -= 1
                     continue
                 # ')' can't happen after if (foo), since it would be a syntax error.
-                if tokens[i + 1].string in (":", ")", "]", "}", "in") or tokens[
+                if tokens[i + 1].string in {":", ")", "]", "}", "in"} or tokens[
                     i + 1
-                ].type in (tokenize.NEWLINE, tokenize.ENDMARKER, tokenize.COMMENT):
+                ].type in {tokenize.NEWLINE, tokenize.ENDMARKER, tokenize.COMMENT}:
                     if contains_walrus_operator and walrus_operator_depth - 1 == depth:
                         return
                     # The empty tuple () is always accepted.
@@ -421,7 +424,7 @@ class FormatChecker(BaseTokenChecker):
                             self.add_message(
                                 "superfluous-parens", line=line_num, args=keyword_token
                             )
-                    elif keyword_token in ("return", "yield"):
+                    elif keyword_token in {"return", "yield"}:
                         self.add_message(
                             "superfluous-parens", line=line_num, args=keyword_token
                         )
@@ -436,7 +439,7 @@ class FormatChecker(BaseTokenChecker):
                     return
                 # 'and' and 'or' are the only boolean operators with lower precedence
                 # than 'not', so parens are only required when they are found.
-                if token[1] in ("and", "or"):
+                if token[1] in {"and", "or"}:
                     found_and_or = True
                 # A yield inside an expression must always be in parentheses,
                 # quit early without error.

@@ -1,19 +1,13 @@
-import sys
-from typing import Any
+from typing import Any, NoReturn
 from unittest.mock import patch
 
-from _pytest.capture import CaptureFixture
 from astroid import AstroidBuildingError, extract_node, nodes
-from py._path.local import LocalPath  # type: ignore
+from py._path.local import LocalPath  # type: ignore[import]
+from pytest import CaptureFixture
 
 from pylint.checkers.utils import safe_infer
 from pylint.lint.pylinter import PyLinter
 from pylint.utils import FileState
-
-if sys.version_info >= (3, 6, 2):
-    from typing import NoReturn
-else:
-    from typing_extensions import NoReturn
 
 
 def raise_exception(*args: Any, **kwargs: Any) -> NoReturn:
@@ -50,3 +44,9 @@ def test_crash_in_file(
     with open(files[0], encoding="utf8") as f:
         content = f.read()
     assert "Failed to import module spam." in content
+
+
+def test_check_deprecation(linter: PyLinter, recwarn):
+    linter.check("myfile.py")
+    msg = recwarn.pop()
+    assert "check function will only accept sequence" in str(msg)

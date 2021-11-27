@@ -42,8 +42,13 @@
 # Copyright (c) 2020 Slavfox <slavfoxman@gmail.com>
 # Copyright (c) 2020 Anthony Sottile <asottile@umich.edu>
 # Copyright (c) 2021 Daniël van Noord <13665637+DanielNoord@users.noreply.github.com>
-# Copyright (c) 2021 Marc Mueller <30130371+cdce8p@users.noreply.github.com>
+# Copyright (c) 2021 Mark Byrne <31762852+mbyrnepr2@users.noreply.github.com>
 # Copyright (c) 2021 Nick Drozd <nicholasdrozd@gmail.com>
+# Copyright (c) 2021 Arianna Y <92831762+areveny@users.noreply.github.com>
+# Copyright (c) 2021 Jaehoon Hwang <jaehoonhwang@users.noreply.github.com>
+# Copyright (c) 2021 Samuel FORESTIER <HorlogeSkynet@users.noreply.github.com>
+# Copyright (c) 2021 Marc Mueller <30130371+cdce8p@users.noreply.github.com>
+# Copyright (c) 2021 bot <bot@noreply.github.com>
 # Copyright (c) 2021 David Liu <david@cs.toronto.edu>
 # Copyright (c) 2021 Matus Valo <matusvalo@users.noreply.github.com>
 # Copyright (c) 2021 Lorena B <46202743+lorena-b@users.noreply.github.com>
@@ -312,7 +317,7 @@ def is_error(node: nodes.FunctionDef) -> bool:
     return len(node.body) == 1 and isinstance(node.body[0], nodes.Raise)
 
 
-builtins = builtins.__dict__.copy()  # type: ignore
+builtins = builtins.__dict__.copy()  # type: ignore[assignment]
 SPECIAL_BUILTINS = ("__builtins__",)  # '__path__', '__file__')
 
 
@@ -323,7 +328,7 @@ def is_builtin_object(node: nodes.NodeNG) -> bool:
 
 def is_builtin(name: str) -> bool:
     """return true if <name> could be considered as a builtin defined by python"""
-    return name in builtins or name in SPECIAL_BUILTINS  # type: ignore
+    return name in builtins or name in SPECIAL_BUILTINS  # type: ignore[operator]
 
 
 def is_defined_in_scope(
@@ -673,6 +678,13 @@ def node_frame_class(node: nodes.NodeNG) -> Optional[nodes.ClassDef]:
     return klass
 
 
+def get_outer_class(class_node: astroid.ClassDef) -> Optional[astroid.ClassDef]:
+    """Return the class that is the outer class of given (nested) class_node"""
+    parent_klass = class_node.parent.frame()
+
+    return parent_klass if isinstance(parent_klass, astroid.ClassDef) else None
+
+
 def is_attr_private(attrname: str) -> Optional[Match[str]]:
     """Check that attribute name is private (at least two leading underscores,
     at most one trailing underscore)
@@ -718,7 +730,7 @@ def inherit_from_std_ex(node: nodes.NodeNG) -> bool:
     """
     ancestors = node.ancestors() if hasattr(node, "ancestors") else []
     return any(
-        ancestor.name in ("Exception", "BaseException")
+        ancestor.name in {"Exception", "BaseException"}
         and ancestor.root().name == EXCEPTIONS_MODULE
         for ancestor in itertools.chain([node], ancestors)
     )
@@ -790,7 +802,7 @@ def is_property_setter_or_deleter(node: nodes.FunctionDef) -> bool:
 def _is_property_decorator(decorator: nodes.Name) -> bool:
     for inferred in decorator.infer():
         if isinstance(inferred, nodes.ClassDef):
-            if inferred.qname() in ("builtins.property", "functools.cached_property"):
+            if inferred.qname() in {"builtins.property", "functools.cached_property"}:
                 return True
             for ancestor in inferred.ancestors():
                 if ancestor.name == "property" and ancestor.root().name == "builtins":
@@ -815,7 +827,9 @@ def _is_property_decorator(decorator: nodes.Name) -> bool:
 
 
 def decorated_with(
-    func: Union[nodes.FunctionDef, astroid.BoundMethod, astroid.UnboundMethod],
+    func: Union[
+        nodes.ClassDef, nodes.FunctionDef, astroid.BoundMethod, astroid.UnboundMethod
+    ],
     qnames: Iterable[str],
 ) -> bool:
     """Determine if the `func` node has a decorator with the qualified name `qname`."""
@@ -834,6 +848,47 @@ def decorated_with(
         except astroid.InferenceError:
             continue
     return False
+
+
+def uninferable_final_decorators(
+    node: nodes.Decorators,
+) -> List[Optional[Union[nodes.Attribute, nodes.Name]]]:
+    """Return a list of uninferable `typing.final` decorators in `node`.
+
+    This function is used to determine if the `typing.final` decorator is used
+    with an unsupported Python version; the decorator cannot be inferred when
+    using a Python version lower than 3.8.
+    """
+    decorators = []
+    for decorator in getattr(node, "nodes", []):
+        if isinstance(decorator, nodes.Attribute):
+            try:
+                import_node = decorator.expr.lookup(decorator.expr.name)[1][0]
+            except AttributeError:
+                continue
+        elif isinstance(decorator, nodes.Name):
+            import_node = decorator.lookup(decorator.name)[1][0]
+        else:
+            continue
+
+        if not isinstance(import_node, (astroid.Import, astroid.ImportFrom)):
+            continue
+
+        import_names = dict(import_node.names)
+
+        # from typing import final
+        is_from_import = ("final" in import_names) and import_node.modname == "typing"
+        # import typing
+        is_import = ("typing" in import_names) and getattr(
+            decorator, "attrname", None
+        ) == "final"
+
+        if (is_from_import or is_import) and safe_infer(decorator) in [
+            astroid.Uninferable,
+            None,
+        ]:
+            decorators.append(decorator)
+    return decorators
 
 
 @lru_cache(maxsize=1024)
@@ -1288,7 +1343,6 @@ def is_registered_in_singledispatch_function(node: nodes.FunctionDef) -> bool:
             continue
 
         if isinstance(func_def, nodes.FunctionDef):
-            # pylint: disable=redundant-keyword-arg; some flow inference goes wrong here
             return decorated_with(func_def, singledispatch_qnames)
 
     return False
@@ -1634,5 +1688,5 @@ def returns_bool(node: nodes.NodeNG) -> bool:
     return (
         isinstance(node, nodes.Return)
         and isinstance(node.value, nodes.Const)
-        and node.value.value in (True, False)
+        and node.value.value in {True, False}
     )
